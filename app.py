@@ -2,7 +2,7 @@ import streamlit as st
 import json
 import asyncio
 from xai_sdk import AsyncClient
-from xai_sdk.chat import user, tool
+from xai_sdk.chat import user, tool_result
 from xai_sdk.tools import collections_search
 
 # Use Streamlit secrets for API key
@@ -27,7 +27,10 @@ for message in st.session_state.messages:
 def run_async_chat(prompt):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    return loop.run_until_complete(async_chat(prompt))
+    try:
+        return loop.run_until_complete(async_chat(prompt))
+    except asyncio.TimeoutError:
+        return "Timeout error during tool listing—please try again or rephrase the query."
 
 async def async_chat(prompt):
     client = AsyncClient(api_key=API_KEY)
@@ -53,8 +56,8 @@ async def async_chat(prompt):
                 st.info(f"Tool call: {tool_call.function.name} with args: {tool_call.function.arguments}")
                 if tool_call.function.name == "collections_search":
                     tool_args = json.loads(tool_call.function.arguments)
-                    tool_result = f"Retrieved results for query: {tool_args['query']} from collection."  
-                    chat.append(tool(tool_call_id=tool_call.id, name=tool_call.function.name, content=tool_result))
+                    tool_result_str = f"Retrieved results for query: {tool_args['query']} from collection."  
+                    chat.append(tool_result(tool_call_id=tool_call.id, name=tool_call.function.name, content=tool_result_str))
 
     return full_response
 
