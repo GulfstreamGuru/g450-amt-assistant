@@ -1,50 +1,57 @@
+# app.py - Simple Streamlit app to test xAI collection access
+
 import streamlit as st
 import requests
 import json
 
-# Use Streamlit secrets for API key
+# Use Streamlit secrets for API key (add XAI_API_KEY in Streamlit settings)
 API_KEY = st.secrets["XAI_API_KEY"]
-COLLECTION_ID = "aaebf3d1-e575-4eba-8966-db395919a1d5"  # Confirmed working format
 MODEL = "grok-4"  # Or "grok-3" based on your subscription
+COLLECTION_ID = "04cfc2aa-4b9e-4187-82c4-6c8bbfa023a0"  # Replace with your actual collection ID (e.g., aaebf3d1-e575-4eba-8966-db395919a1d5)
 
-st.title("G450 AMT Assistant")
-st.markdown("Ask maintenance queries about the Gulfstream G450. Powered by Grok with your uploaded manuals.")
+st.title("xAI Collection Test App")
+st.markdown("This app tests accessing a collection with a test.txt file containing 'This is a Test'.")
 
-# Chat history
-if "messages" not in st.session_state:
-    st.session_state.messages = []
+# Test query
+test_query = "What is the content of the test file in the collection?"
 
-# Display chat history
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+if st.button("Run Test Query"):
+    with st.spinner("Querying Grok with collection..."):
+        url = "https://api.x.ai/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {API_KEY}",
+            "Content-Type": "application/json"
+        }
+        data = {
+            "model": MODEL,
+            "messages": [{"role": "user", "content": test_query}],
+            "tools": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "collections_search",
+                        "description": "Search the specified collections for relevant information",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "query": {"type": "string", "description": "The search query"},
+                                "limit": {"type": "integer", "description": "Number of results", "default": 10}
+                            },
+                            "required": ["query"]
+                        },
+                        "collection_ids": [COLLECTION_ID]
+                    }
+                }
+            ]
+        }
 
-# User input
-if prompt := st.chat_input("Enter your query (e.g., 'replace main wheel assembly procedure')"):
-    # Add user message to history
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
-
-    # API call to Grok (fallback without tools)
-    url = "https://api.x.ai/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {API_KEY}",
-        "Content-Type": "application/json"
-    }
-    data = {
-        "model": MODEL,
-        "messages": [{"role": "user", "content": prompt}],
-        "collection_id": COLLECTION_ID  # Attach if supported; may trigger basic RAG
-    }
-
-    with st.spinner("Thinking..."):
         response = requests.post(url, headers=headers, json=data)
         if response.status_code == 200:
-            content = response.json()["choices"][0]["message"]["content"]
-            st.session_state.messages.append({"role": "assistant", "content": content})
-            with st.chat_message("assistant"):
-                st.markdown(content)
+            api_resp = response.json()
+            content = api_resp["choices"][0]["message"]["content"]
+            st.success("Response from Grok:")
+            st.markdown(content)
+            if "tool_calls" in api_resp["choices"][0]["message"]:
+                st.info("Tool calls detected - RAG is attempting to access the collection.")
         else:
             st.error(f"API Error: {response.text}")
-            st.error(f"Used Key (truncated for safety): {API_KEY[:20]}...{API_KEY[-20:]}")
