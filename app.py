@@ -1,12 +1,13 @@
 import streamlit as st
-import requests
-import json
+import os
+from xai_sdk import AsyncClient
+from xai_sdk.chat import user
+from xai_sdk.tools import collections_search
 
 # Use Streamlit secrets for API key
 API_KEY = st.secrets["XAI_API_KEY"]
 COLLECTION_ID = "aaebf3d1-e575-4eba-8966-db395919a1d5"  # Confirmed working format
 MODEL = "grok-4"
-API_URL = "https://api.x.ai/v1/chat/completions"
 
 st.title("G450 AMT Assistant")
 st.markdown("Ask maintenance queries about the Gulfstream G450. Powered by Grok with your uploaded manuals.")
@@ -27,74 +28,35 @@ if prompt := st.chat_input("Enter your query (e.g., 'replace main wheel assembly
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # Prepare initial payload with tools for RAG
-    data = {
-        "model": MODEL,
-        "messages": st.session_state.messages,
-        "tools": [
-            {
-                "type": "function",
-                "function": {
-                    "name": "collections_search",
-                    "description": "Search the specified collections for relevant information",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "query": {"type": "string", "description": "The search query"},
-                            "limit": {"type": "integer", "description": "Number of results", "default": 10}
-                        },
-                        "required": ["query"]
-                    },
-                    "collection_ids": [COLLECTION_ID]
-                }
-            }
-        ],
-        "stream": true  # Enable streaming
-    }
+    client = AsyncClient(api_key=API_KEY)
 
-    headers = {
-        "Authorization": f"Bearer {API_KEY}",
-        "Content-Type": "application/json"
-    }
+    # Create chat with collections_search tool
+    chat = client.chat.create(
+        model=MODEL,
+        tools=[
+            collections_search(collection_ids=[COLLECTION_ID]),
+        ],
+    )
+
+    # Append the user prompt to the chat
+    chat.append(user(prompt))
 
     with st.chat_message("assistant"):
         message_placeholder = st.empty()
         full_response = ""
-        tool_call = False
 
     with st.spinner("Thinking..."):
-        response = requests.post(API_URL, headers=headers, json=data, stream=True)
-        if response.status_code != 200:
-            st.error(f"API Error: {response.text}")
-            st.stop()
+        async for response, chunk in chat.stream():
+            if chunk.content:
+                full_response += chunk.content
+                message_placeholder.markdown(full_response + "▌")
 
-        # Process streaming response
-        for chunk in response.iter_lines():
-            if chunk:
-                chunk_data = chunk.decode("utf-8")
-                if chunk_data.startswith("data: "):
-                    data_str = chunk_data[6:]
-                    if data_str == "[DONE]":
-                        break
-                    try:
-                        chunk_json = json.loads(data_str)
-                        choices = chunk_json["choices"]
-                        if choices:
-                            delta = choices[0]["delta"]
-                            if "content" in delta and delta["content"]:
-                                full_response += delta["content"]
-                                message_placeholder.markdown(full_response + "▌")
-                            if "tool_calls" in delta:
-                                tool_call = True  # Flag if tool call is present
-                    except json.JSONDecodeError:
-                        st.error("Error parsing chunk")
+            # Handle tool calls if present (for debugging)
+            for tool_call in chunk.tool_calls:
+                st.info(f"Tool call: {tool_call.function.name} with args: {tool_call.function.arguments}")
 
-        # Update final response
         if full_response:
             st.session_state.messages.append({"role": "assistant", "content": full_response})
             message_placeholder.markdown(full_response)
         else:
-            st.error("No content generated—check for tool calls or errors in logs.")
-
-        if tool_call:
-            st.info("Tool call detected—response may be incomplete. Try rephrasing the query.")
+            st.error("No response generated—check for errors in logs.")
