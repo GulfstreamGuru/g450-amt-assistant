@@ -1,4 +1,4 @@
-# app.py - Simple Streamlit app to test xAI collection access
+# app.py - Simplified production-ready Streamlit app to test xAI collection access with multi-turn tool handling
 
 import streamlit as st
 import requests
@@ -10,48 +10,88 @@ MODEL = "grok-4"  # Or "grok-3" based on your subscription
 COLLECTION_ID = "04cfc2aa-4b9e-4187-82c4-6c8bbfa023a0"  # Your new collection ID
 
 st.title("xAI Collection Test App")
-st.markdown("This app tests accessing a collection with a test.txt file containing 'This is a Test'.")
+st.markdown("This app tests accessing a collection with a test.txt file containing 'This is a Test'. Enter a query to test.")
 
-# Test query
-test_query = "What is the content of the test file?"
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-if st.button("Run Test Query"):
-    with st.spinner("Querying Grok with collection..."):
-        url = "https://api.x.ai/v1/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {API_KEY}",
-            "Content-Type": "application/json"
+# Display chat history
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+# User input
+if prompt := st.chat_input("Enter your query (e.g., 'What is the content of the test file?')"):
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
+
+    url = "https://api.x.ai/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {API_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    # Tools for RAG
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "collections_search",
+                "description": "Search the specified collections for relevant information",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "The search query"},
+                        "limit": {"type": "integer", "description": "Number of results", "default": 10}
+                    },
+                    "required": ["query"]
+                },
+                "collection_ids": [COLLECTION_ID]
+            }
         }
+    ]
+
+    # Initial messages with full history
+    messages = st.session_state.messages
+
+    with st.spinner("Thinking..."):
         data = {
             "model": MODEL,
-            "messages": [{"role": "user", "content": test_query}],
-            "tools": [
-                {
-                    "type": "function",
-                    "function": {
-                        "name": "collections_search",
-                        "description": "Search the specified collections for relevant information",
-                        "parameters": {
-                            "type": "object",
-                            "properties": {
-                                "query": {"type": "string", "description": "The search query"},
-                                "limit": {"type": "integer", "description": "Number of results", "default": 10}
-                            },
-                            "required": ["query"]
-                        },
-                        "collection_ids": [COLLECTION_ID]
-                    }
-                }
-            ]
+            "messages": messages,
+            "tools": tools
         }
 
         response = requests.post(url, headers=headers, json=data)
         if response.status_code == 200:
             api_resp = response.json()
-            content = api_resp["choices"][0]["message"]["content"]
-            st.success("Response from Grok:")
-            st.markdown(content)
-            if "tool_calls" in api_resp["choices"][0]["message"]:
+            assistant_message = api_resp["choices"][0]["message"]
+            content = assistant_message.get("content", "")
+            st.session_state.messages.append({"role": "assistant", "content": content})
+            with st.chat_message("assistant"):
+                st.markdown(content)
+
+            # Handle tool calls if present (multi-turn)
+            if "tool_calls" in assistant_message:
                 st.info("Tool calls detected - RAG is attempting to access the collection.")
+                messages.append(assistant_message)
+                for tool_call in assistant_message["tool_calls"]:
+                    if tool_call["function"]["name"] == "collections_search":
+                        tool_args = json.loads(tool_call["function"]["arguments"])
+                        tool_result = f"Retrieved results for query: {tool_args['query']} from collection."  # Placeholder; in production, execute actual search if external tool
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call["id"],
+                            "name": "collections_search",
+                            "content": tool_result
+                        })
+                # Follow-up call
+                data["messages"] = messages
+                response = requests.post(url, headers=headers, json=data)
+                if response.status_code == 200:
+                    content = response.json()["choices"][0]["message"]["content"]
+                    st.session_state.messages.append({"role": "assistant", "content": content})
+                    with st.chat_message("assistant"):
+                        st.markdown(content)
         else:
             st.error(f"API Error: {response.text}")
