@@ -1,4 +1,4 @@
-streamlit==1.39.0
+streamlit==1.52.0
 requests==2.32.3
 python-dotenv==1.0.1
-xai-sdk==1.4.0  # Or latest version
+xai-sdk==1.4.0
