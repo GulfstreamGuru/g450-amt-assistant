@@ -1,5 +1,7 @@
 import streamlit as st
-import os
+import requests
+import json
+import asyncio
 from xai_sdk import AsyncClient
 from xai_sdk.chat import user
 from xai_sdk.tools import collections_search
@@ -21,13 +23,13 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# User input
-if prompt := st.chat_input("Enter your query (e.g., 'replace main wheel assembly procedure')"):
-    # Add user message to history
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
+# Sync wrapper for async chat stream
+def run_async_chat(prompt):
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    return loop.run_until_complete(async_chat(prompt))
 
+async def async_chat(prompt):
     client = AsyncClient(api_key=API_KEY)
 
     # Create chat with collections_search tool
@@ -41,22 +43,34 @@ if prompt := st.chat_input("Enter your query (e.g., 'replace main wheel assembly
     # Append the user prompt to the chat
     chat.append(user(prompt))
 
-    with st.chat_message("assistant"):
-        message_placeholder = st.empty()
-        full_response = ""
+    full_response = ""
+    async for response, chunk in chat.stream():
+        if chunk.content:
+            full_response += chunk.content
+        # Handle tool calls if present
+        for tool_call in chunk.tool_calls:
+            if tool_call["function"]["name"] == "collections_search":
+                # Placeholder - in real SDK, it may auto-handle; adjust if needed
+                tool_args = json.loads(tool_call["function"]["arguments"])
+                tool_result = f"Retrieved results for query: {tool_args['query']} from collection."  
+                chat.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call["id"],
+                    "name": "collections_search",
+                    "content": tool_result
+                })
+
+    return full_response
+
+# User input
+if prompt := st.chat_input("Enter your query (e.g., 'replace main wheel assembly procedure')"):
+    # Add user message to history
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
 
     with st.spinner("Thinking..."):
-        async for response, chunk in chat.stream():
-            if chunk.content:
-                full_response += chunk.content
-                message_placeholder.markdown(full_response + "▌")
-
-            # Handle tool calls if present (for debugging)
-            for tool_call in chunk.tool_calls:
-                st.info(f"Tool call: {tool_call.function.name} with args: {tool_call.function.arguments}")
-
-        if full_response:
-            st.session_state.messages.append({"role": "assistant", "content": full_response})
-            message_placeholder.markdown(full_response)
-        else:
-            st.error("No response generated—check for errors in logs.")
+        content = run_async_chat(prompt)
+        st.session_state.messages.append({"role": "assistant", "content": content})
+        with st.chat_message("assistant"):
+            st.markdown(content)
