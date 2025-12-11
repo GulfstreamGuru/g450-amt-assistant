@@ -3,7 +3,7 @@ import requests
 import json
 
 # Replace with your details
-API_KEY = "xai-pWocbOhYXzCsYf0FKs35rSupxNoeoyPIo4W9O9olFwu8eHz4r9xo5r1jNKQu5f02diQDrLI8hvvFS36Y"
+API_KEY = "your_xai_api_key_here"
 COLLECTION_ID = "collection_aaebf3d1-e575-4eba-8966-db395919a1d5"  # e.g., for G450
 MODEL = "grok-4"  # Or "grok-3" based on your subscription
 
