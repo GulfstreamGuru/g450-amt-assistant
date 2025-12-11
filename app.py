@@ -2,9 +2,9 @@ import streamlit as st
 import requests
 import json
 
-# Replace with your details
-API_KEY = "your_xai_api_key_here"
-COLLECTION_ID = "collection_aaebf3d1-e575-4eba-8966-db395919a1d5"  # e.g., for G450
+# Use Streamlit secrets for API key
+API_KEY = st.secrets["XAI_API_KEY"]
+COLLECTION_ID = "aaeb f3d1-e575-4eba-8966-db395919a1d5"  # e.g., for G450
 MODEL = "grok-4"  # Or "grok-3" based on your subscription
 
 st.title("G450 AMT Assistant")
@@ -46,4 +46,5 @@ if prompt := st.chat_input("Enter your query (e.g., 'replace main wheel assembly
             with st.chat_message("assistant"):
                 st.markdown(content)
         else:
-            st.error(f"Error: {response.text}")
+            st.error(f"API Error: {response.status_code} - {response.text}")
+            st.error(f"Used Key (truncated for safety): {API_KEY[:20]}...{API_KEY[-20:]}")  # Shows if key is pulled correctly
