@@ -27,72 +27,74 @@ if prompt := st.chat_input("Enter your query (e.g., 'replace main wheel assembly
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # Prepare initial messages with full history
-    messages = st.session_state.messages.copy()
-
-    # Tools for RAG
-    tools = [
-        {
-            "type": "function",
-            "function": {
-                "name": "collections_search",
-                "description": "Search the specified collections for relevant information",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "query": {"type": "string", "description": "The search query"},
-                        "limit": {"type": "integer", "description": "Number of results", "default": 10}
+    # Prepare initial payload with tools for RAG
+    data = {
+        "model": MODEL,
+        "messages": st.session_state.messages,
+        "tools": [
+            {
+                "type": "function",
+                "function": {
+                    "name": "collections_search",
+                    "description": "Search the specified collections for relevant information",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {"type": "string", "description": "The search query"},
+                            "limit": {"type": "integer", "description": "Number of results", "default": 10}
+                        },
+                        "required": ["query"]
                     },
-                    "required": ["query"]
-                },
-                "collection_ids": [COLLECTION_ID]
+                    "collection_ids": [COLLECTION_ID]
+                }
             }
-        }
-    ]
+        ],
+        "stream": true  # Enable streaming
+    }
 
     headers = {
         "Authorization": f"Bearer {API_KEY}",
         "Content-Type": "application/json"
     }
 
+    with st.chat_message("assistant"):
+        message_placeholder = st.empty()
+        full_response = ""
+        tool_call = False
+
     with st.spinner("Thinking..."):
-        content = ""
-        while True:
-            data = {
-                "model": MODEL,
-                "messages": messages,
-                "tools": tools
-            }
-            response = requests.post(API_URL, headers=headers, json=data)
-            if response.status_code != 200:
-                st.error(f"API Error: {response.status_code} - {response.text}")
-                st.error(f"Used Key (truncated for safety): {API_KEY[:20]}...{API_KEY[-20:]}")
-                break
+        response = requests.post(API_URL, headers=headers, json=data, stream=True)
+        if response.status_code != 200:
+            st.error(f"API Error: {response.text}")
+            st.stop()
 
-            api_resp = response.json()
-            assistant_message = api_resp["choices"][0]["message"]
-            messages.append(assistant_message)
+        # Process streaming response
+        for chunk in response.iter_lines():
+            if chunk:
+                chunk_data = chunk.decode("utf-8")
+                if chunk_data.startswith("data: "):
+                    data_str = chunk_data[6:]
+                    if data_str == "[DONE]":
+                        break
+                    try:
+                        chunk_json = json.loads(data_str)
+                        choices = chunk_json["choices"]
+                        if choices:
+                            delta = choices[0]["delta"]
+                            if "content" in delta and delta["content"]:
+                                full_response += delta["content"]
+                                message_placeholder.markdown(full_response + "▌")
+                            if "tool_calls" in delta:
+                                tool_call = True  # Flag if tool call is present
+                    except json.JSONDecodeError:
+                        st.error("Error parsing chunk")
 
-            if "tool_calls" in assistant_message:
-                for tool_call in assistant_message["tool_calls"]:
-                    if tool_call["function"]["name"] == "collections_search":
-                        # Placeholder for internal tool response (adjust if API provides results)
-                        tool_args = json.loads(tool_call["function"]["arguments"])
-                        tool_result = f"Retrieved results for query: {tool_args['query']} from collection."  # Simulate; replace if actual search needed
-                        messages.append({
-                            "role": "tool",
-                            "tool_call_id": tool_call["id"],
-                            "name": tool_call["function"]["name"],
-                            "content": tool_result
-                        })
-                # Continue loop for follow-up call
-            else:
-                content = assistant_message["content"]
-                break
-
-        if content:
-            st.session_state.messages.append({"role": "assistant", "content": content})
-            with st.chat_message("assistant"):
-                st.markdown(content)
+        # Update final response
+        if full_response:
+            st.session_state.messages.append({"role": "assistant", "content": full_response})
+            message_placeholder.markdown(full_response)
         else:
-            st.error("No response generated—check logs for tool call issues.")
+            st.error("No content generated—check for tool calls or errors in logs.")
+
+        if tool_call:
+            st.info("Tool call detected—response may be incomplete. Try rephrasing the query.")
