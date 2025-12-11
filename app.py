@@ -1,18 +1,16 @@
 import streamlit as st
 import json
 import asyncio
-import os
 from xai_sdk import AsyncClient
 from xai_sdk.chat import user
 from xai_sdk.tools import collections_search
-
-# Set MCP timeout env var to avoid listing timeout
-os.environ["MCP_TIMEOUT"] = "120"  # Seconds; increase if needed
+import grpc
 
 # Use Streamlit secrets for API key
 API_KEY = st.secrets["XAI_API_KEY"]
 COLLECTION_ID = "aaebf3d1-e575-4eba-8966-db395919a1d5"  # Confirmed working format
 MODEL = "grok-4"
+RETRY_COUNT = 3  # Number of retries on timeout
 
 st.title("G450 AMT Assistant")
 st.markdown("Ask maintenance queries about the Gulfstream G450. Powered by Grok with your uploaded manuals.")
@@ -33,37 +31,45 @@ def run_async_chat(prompt):
     return loop.run_until_complete(async_chat(prompt))
 
 async def async_chat(prompt):
-    client = AsyncClient(api_key=API_KEY)
+    for attempt in range(RETRY_COUNT):
+        try:
+            client = AsyncClient(api_key=API_KEY)
 
-    # Create chat with collections_search tool
-    chat = client.chat.create(
-        model=MODEL,
-        tools=[
-            collections_search(collection_ids=[COLLECTION_ID]),
-        ],
-    )
+            # Create chat with collections_search tool
+            chat = client.chat.create(
+                model=MODEL,
+                tools=[
+                    collections_search(collection_ids=[COLLECTION_ID]),
+                ],
+            )
 
-    # Append the user prompt to the chat
-    chat.append(user(prompt))
+            # Append the user prompt to the chat
+            chat.append(user(prompt))
 
-    full_response = ""
-    async for response, chunk in chat.stream():
-        if chunk.content:
-            full_response += chunk.content
-        # Handle tool calls if present
-        for tool_call in chunk.tool_calls:
-            st.info(f"Tool call: {tool_call.function.name} with args: {tool_call.function.arguments}")
-            if tool_call.function.name == "collections_search":
-                tool_args = json.loads(tool_call.function.arguments)
-                tool_result = f"Retrieved results for query: {tool_args['query']} from collection."  
-                chat.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "name": tool_call.function.name,
-                    "content": tool_result
-                })
+            full_response = ""
+            async for response, chunk in chat.stream():
+                if chunk.content:
+                    full_response += chunk.content
+                # Handle tool calls if present
+                for tool_call in chunk.tool_calls:
+                    st.info(f"Tool call: {tool_call.function.name} with args: {tool_call.function.arguments}")
+                    if tool_call.function.name == "collections_search":
+                        tool_args = json.loads(tool_call.function.arguments)
+                        tool_result = f"Retrieved results for query: {tool_args['query']} from collection."  
+                        chat.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "name": tool_call.function.name,
+                            "content": tool_result
+                        })
 
-    return full_response
+            return full_response
+        except grpc.aio.AioRpcError as e:
+            if "DEADLINE_EXCEEDED" in str(e) and attempt < RETRY_COUNT - 1:
+                st.info(f"Timeout on attempt {attempt+1}—retrying...")
+                await asyncio.sleep(5)  # Wait before retry
+            else:
+                return f"Error: {str(e)} - Please try again later."
 
 # User input
 if prompt := st.chat_input("Enter your query (e.g., 'replace main wheel assembly procedure')"):
