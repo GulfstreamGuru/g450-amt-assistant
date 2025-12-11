@@ -4,7 +4,7 @@ import json
 
 # Use Streamlit secrets for API key
 API_KEY = st.secrets["XAI_API_KEY"]
-COLLECTION_ID = "aaeb f3d1-e575-4eba-8966-db395919a1d5"  # e.g., for G450
+COLLECTION_ID = "collection_aaebf3d1-e575-4eba-8966-db395919a1d5"  # e.g., for G450
 MODEL = "grok-4"  # Or "grok-3" based on your subscription
 
 st.title("G450 AMT Assistant")
