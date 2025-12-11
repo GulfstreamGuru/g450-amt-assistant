@@ -7,7 +7,7 @@ import json
 # Use Streamlit secrets for API key (add XAI_API_KEY in Streamlit settings)
 API_KEY = st.secrets["XAI_API_KEY"]
 MODEL = "grok-4"  # Or "grok-3" based on your subscription
-COLLECTION_ID = "collection_04cfc2aa-4b9e-4187-82c4-6c8bbfa023a0"  # Replace with your actual collection ID (e.g., aaebf3d1-e575-4eba-8966-db395919a1d5)
+COLLECTION_ID = "04cfc2aa-4b9e-4187-82c4-6c8bbfa023a0"  # Replace with your actual collection ID (e.g., aaebf3d1-e575-4eba-8966-db395919a1d5)
 
 st.title("xAI Collection Test App")
 st.markdown("This app tests accessing a collection with a test.txt file containing 'This is a Test'.")
