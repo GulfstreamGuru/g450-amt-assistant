@@ -9,7 +9,7 @@ from xai_sdk.tools import collections_search
 API_KEY = st.secrets["XAI_API_KEY"]
 COLLECTION_ID = "aaebf3d1-e575-4eba-8966-db395919a1d5"  # Confirmed working format
 MODEL = "grok-4"
-TIMEOUT = 60  # Increase to avoid MCP list timeout
+TIMEOUT = 120  # Increased to 2 minutes for MCP listing
 
 st.title("G450 AMT Assistant")
 st.markdown("Ask maintenance queries about the Gulfstream G450. Powered by Grok with your uploaded manuals.")
@@ -27,10 +27,13 @@ for message in st.session_state.messages:
 def run_async_chat(prompt):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    return loop.run_until_complete(async_chat(prompt))
+    try:
+        return loop.run_until_complete(async_chat(prompt))
+    except asyncio.TimeoutError:
+        return "Timeout error during tool listing—please try again or rephrase the query."
 
 async def async_chat(prompt):
-    client = AsyncClient(api_key=API_KEY, timeout=TIMEOUT)  # Set higher timeout
+    client = AsyncClient(api_key=API_KEY)
 
     # Create chat with collections_search tool
     chat = client.chat.create(
@@ -44,21 +47,22 @@ async def async_chat(prompt):
     chat.append(user(prompt))
 
     full_response = ""
-    async for response, chunk in chat.stream():
-        if chunk.content:
-            full_response += chunk.content
-        # Handle tool calls if present
-        for tool_call in chunk.tool_calls:
-            st.info(f"Tool call: {tool_call.function.name} with args: {tool_call.function.arguments}")
-            if tool_call.function.name == "collections_search":
-                tool_args = json.loads(tool_call.function.arguments)
-                tool_result = f"Retrieved results for query: {tool_args['query']} from collection."  
-                chat.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "name": tool_call.function.name,
-                    "content": tool_result
-                })
+    async with asyncio.timeout(TIMEOUT):
+        async for response, chunk in chat.stream():
+            if chunk.content:
+                full_response += chunk.content
+            # Handle tool calls if present
+            for tool_call in chunk.tool_calls:
+                st.info(f"Tool call: {tool_call.function.name} with args: {tool_call.function.arguments}")
+                if tool_call.function.name == "collections_search":
+                    tool_args = json.loads(tool_call.function.arguments)  # Note: args, not arguments if needed
+                    tool_result = f"Retrieved results for query: {tool_args['query']} from collection."  
+                    chat.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "name": tool_call.function.name,
+                        "content": tool_result
+                    })
 
     return full_response
 
