@@ -1,4 +1,4 @@
-# app.py - Simplified production-ready Streamlit app to test xAI collection access with multi-turn tool handling
+# app.py - Simplified Streamlit app to test xAI collection access with multi-turn tool handling
 
 import streamlit as st
 import requests
@@ -53,7 +53,7 @@ if prompt := st.chat_input("Enter your query (e.g., 'What is the content of the 
     ]
 
     # Initial messages with full history
-    messages = st.session_state.messages
+    messages = st.session_state.messages.copy()
 
     with st.spinner("Thinking..."):
         data = {
@@ -78,20 +78,24 @@ if prompt := st.chat_input("Enter your query (e.g., 'What is the content of the 
                 for tool_call in assistant_message["tool_calls"]:
                     if tool_call["function"]["name"] == "collections_search":
                         tool_args = json.loads(tool_call["function"]["arguments"])
-                        tool_result = f"Retrieved results for query: {tool_args['query']} from collection."  # Placeholder; in production, execute actual search if external tool
+                        # Simulate tool result (in production, execute the search if external; for collections_search, placeholder as it's internal)
+                        tool_result = f"Retrieved results for query: {tool_args['query']} from collection."  
                         messages.append({
                             "role": "tool",
                             "tool_call_id": tool_call["id"],
-                            "name": "collections_search",
+                            "name": tool_call["function"]["name"],
                             "content": tool_result
                         })
-                # Follow-up call
+                # Follow-up call with tool result
                 data["messages"] = messages
+                data.pop("tools")  # Remove tools for follow-up as per docs
                 response = requests.post(url, headers=headers, json=data)
                 if response.status_code == 200:
                     content = response.json()["choices"][0]["message"]["content"]
                     st.session_state.messages.append({"role": "assistant", "content": content})
                     with st.chat_message("assistant"):
                         st.markdown(content)
+                else:
+                    st.error(f"Follow-up API Error: {response.text}")
         else:
             st.error(f"API Error: {response.text}")
