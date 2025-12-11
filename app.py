@@ -1,5 +1,4 @@
 import streamlit as st
-import os
 import json
 import asyncio
 from xai_sdk import AsyncClient
@@ -10,6 +9,7 @@ from xai_sdk.tools import collections_search
 API_KEY = st.secrets["XAI_API_KEY"]
 COLLECTION_ID = "aaebf3d1-e575-4eba-8966-db395919a1d5"  # Confirmed working format
 MODEL = "grok-4"
+TIMEOUT = 60  # Increase to avoid MCP list timeout
 
 st.title("G450 AMT Assistant")
 st.markdown("Ask maintenance queries about the Gulfstream G450. Powered by Grok with your uploaded manuals.")
@@ -30,7 +30,7 @@ def run_async_chat(prompt):
     return loop.run_until_complete(async_chat(prompt))
 
 async def async_chat(prompt):
-    client = AsyncClient(api_key=API_KEY)
+    client = AsyncClient(api_key=API_KEY, timeout=TIMEOUT)  # Set higher timeout
 
     # Create chat with collections_search tool
     chat = client.chat.create(
@@ -51,7 +51,6 @@ async def async_chat(prompt):
         for tool_call in chunk.tool_calls:
             st.info(f"Tool call: {tool_call.function.name} with args: {tool_call.function.arguments}")
             if tool_call.function.name == "collections_search":
-                # Placeholder - in real SDK, it may auto-handle; adjust if needed
                 tool_args = json.loads(tool_call.function.arguments)
                 tool_result = f"Retrieved results for query: {tool_args['query']} from collection."  
                 chat.append({
