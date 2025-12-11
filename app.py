@@ -43,33 +43,4 @@ async def async_chat(prompt):
         ],
     )
 
-    # Append the user prompt to the chat
-    chat.append(user(prompt))
-
-    full_response = ""
-    async with asyncio.timeout(TIMEOUT):
-        async for response, chunk in chat.stream():
-            if chunk.content:
-                full_response += chunk.content
-            # Handle tool calls if present
-            for tool_call in chunk.tool_calls:
-                st.info(f"Tool call: {tool_call.function.name} with args: {tool_call.function.arguments}")
-                if tool_call.function.name == "collections_search":
-                    tool_args = json.loads(tool_call.function.arguments)
-                    tool_result_str = f"Retrieved results for query: {tool_args['query']} from collection."  
-                    chat.append(tool_result(tool_call_id=tool_call.id, name=tool_call.function.name, content=tool_result_str))
-
-    return full_response
-
-# User input
-if prompt := st.chat_input("Enter your query (e.g., 'replace main wheel assembly procedure')"):
-    # Add user message to history
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
-
-    with st.spinner("Thinking..."):
-        content = run_async_chat(prompt)
-        st.session_state.messages.append({"role": "assistant", "content": content})
-        with st.chat_message("assistant"):
-            st.markdown(content)
+    # Append the user
