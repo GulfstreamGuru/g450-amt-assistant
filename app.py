@@ -1,5 +1,5 @@
 import streamlit as st
-import requests
+import os
 import json
 import asyncio
 from xai_sdk import AsyncClient
@@ -49,14 +49,15 @@ async def async_chat(prompt):
             full_response += chunk.content
         # Handle tool calls if present
         for tool_call in chunk.tool_calls:
-            if tool_call["function"]["name"] == "collections_search":
+            st.info(f"Tool call: {tool_call.function.name} with args: {tool_call.function.arguments}")
+            if tool_call.function.name == "collections_search":
                 # Placeholder - in real SDK, it may auto-handle; adjust if needed
-                tool_args = json.loads(tool_call["function"]["arguments"])
+                tool_args = json.loads(tool_call.function.arguments)
                 tool_result = f"Retrieved results for query: {tool_args['query']} from collection."  
                 chat.append({
                     "role": "tool",
-                    "tool_call_id": tool_call["id"],
-                    "name": "collections_search",
+                    "tool_call_id": tool_call.id,
+                    "name": tool_call.function.name,
                     "content": tool_result
                 })
 
