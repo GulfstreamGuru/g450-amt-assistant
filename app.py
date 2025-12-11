@@ -4,13 +4,13 @@ import asyncio
 from xai_sdk import AsyncClient
 from xai_sdk.chat import user
 from xai_sdk.tools import collections_search
-import grpc
 
 # Use Streamlit secrets for API key
 API_KEY = st.secrets["XAI_API_KEY"]
 COLLECTION_ID = "aaebf3d1-e575-4eba-8966-db395919a1d5"  # Confirmed working format
 MODEL = "grok-4"
-RETRY_COUNT = 3  # Number of retries on timeout
+TIMEOUT = 300  # Increased to 5 minutes based on MCP limits
+RETRY_COUNT = 5  # Retry on timeout
 
 st.title("G450 AMT Assistant")
 st.markdown("Ask maintenance queries about the Gulfstream G450. Powered by Grok with your uploaded manuals.")
@@ -33,7 +33,7 @@ def run_async_chat(prompt):
 async def async_chat(prompt):
     for attempt in range(RETRY_COUNT):
         try:
-            client = AsyncClient(api_key=API_KEY)
+            client = AsyncClient(api_key=API_KEY, timeout=TIMEOUT)
 
             # Create chat with collections_search tool
             chat = client.chat.create(
@@ -64,12 +64,12 @@ async def async_chat(prompt):
                         })
 
             return full_response
-        except grpc.aio.AioRpcError as e:
+        except Exception as e:  # Catch all to handle AioRpcError
             if "DEADLINE_EXCEEDED" in str(e) and attempt < RETRY_COUNT - 1:
-                st.info(f"Timeout on attempt {attempt+1}—retrying...")
-                await asyncio.sleep(5)  # Wait before retry
+                st.info(f"Timeout on attempt {attempt+1}—retrying after 10 seconds...")
+                await asyncio.sleep(10)  # Backoff
             else:
-                return f"Error: {str(e)} - Please try again later."
+                return f"Error: {str(e)} - Please try again later or check xAI API status."
 
 # User input
 if prompt := st.chat_input("Enter your query (e.g., 'replace main wheel assembly procedure')"):
