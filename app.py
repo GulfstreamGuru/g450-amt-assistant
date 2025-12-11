@@ -2,7 +2,7 @@ import streamlit as st
 import json
 import asyncio
 from xai_sdk import AsyncClient
-from xai_sdk.chat import user, tool_result
+from xai_sdk.chat import user, tool_result, system
 from xai_sdk.tools import collections_search
 
 # Use Streamlit secrets for API key
@@ -43,6 +43,9 @@ async def async_chat(prompt):
         ],
     )
 
+    # Add system prompt to encourage tool use
+    chat.append(system("Use the collections_search tool to retrieve information from the uploaded manual for accurate summaries."))
+
     # Append the user prompt to the chat
     chat.append(user(prompt))
 
@@ -57,7 +60,7 @@ async def async_chat(prompt):
                 if tool_call.function.name == "collections_search":
                     tool_args = json.loads(tool_call.function.arguments)
                     tool_result_str = f"Retrieved results for query: {tool_args['query']} from collection."  
-                    chat.append(tool_result(tool_result_str))
+                    chat.append(tool_result(tool_call_id=tool_call.id, content=tool_result_str))
 
     return full_response
 
