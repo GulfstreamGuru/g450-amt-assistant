@@ -57,7 +57,7 @@ async def async_chat(prompt):
                 if tool_call.function.name == "collections_search":
                     tool_args = json.loads(tool_call.function.arguments)
                     tool_result_str = f"Retrieved results for query: {tool_args['query']} from collection."  
-                    chat.append(tool_result(tool_result_str))  # Correct syntax: single result argument
+                    chat.append(tool_result(tool_call_id=tool_call.id, content=tool_result_str))
 
     return full_response
 
