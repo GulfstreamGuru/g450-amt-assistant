@@ -27,30 +27,28 @@ if prompt := st.chat_input("Enter your query (e.g., 'replace main wheel assembly
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # Prepare initial payload with tools for RAG
-    messages = st.session_state.messages.copy()  # Use full history
-    data = {
-        "model": MODEL,
-        "messages": messages,
-        "tools": [
-            {
-                "type": "function",
-                "function": {
-                    "name": "collections_search",
-                    "description": "Search the specified collections for relevant information",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "query": {"type": "string", "description": "The search query"},
-                            "limit": {"type": "integer", "description": "Number of results", "default": 10}
-                        },
-                        "required": ["query"]
+    # Prepare initial messages with full history
+    messages = st.session_state.messages.copy()
+
+    # Tools for RAG
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "collections_search",
+                "description": "Search the specified collections for relevant information",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "The search query"},
+                        "limit": {"type": "integer", "description": "Number of results", "default": 10}
                     },
-                    "collection_ids": [COLLECTION_ID]  # Attach your collection
-                }
+                    "required": ["query"]
+                },
+                "collection_ids": [COLLECTION_ID]
             }
-        ]
-    }
+        }
+    ]
 
     headers = {
         "Authorization": f"Bearer {API_KEY}",
@@ -58,45 +56,43 @@ if prompt := st.chat_input("Enter your query (e.g., 'replace main wheel assembly
     }
 
     with st.spinner("Thinking..."):
-        # Initial API call
-        response = requests.post(API_URL, headers=headers, json=data)
-        if response.status_code != 200:
-            st.error(f"API Error: {response.text}")
-            st.error(f"Used Key (truncated for safety): {API_KEY[:20]}...{API_KEY[-20:]}")
-            st.stop()
+        content = ""
+        while True:
+            data = {
+                "model": MODEL,
+                "messages": messages,
+                "tools": tools
+            }
+            response = requests.post(API_URL, headers=headers, json=data)
+            if response.status_code != 200:
+                st.error(f"API Error: {response.status_code} - {response.text}")
+                st.error(f"Used Key (truncated for safety): {API_KEY[:20]}...{API_KEY[-20:]}")
+                break
 
-        api_resp = response.json()
-        choices = api_resp["choices"]
-
-        # Handle tool calls if present
-        tool_calls = choices[0].get("tool_calls", [])
-        if tool_calls:
-            # Append the assistant's message with tool calls to history
-            st.session_state.messages.append(choices[0]["message"])
-
-            # For each tool call (e.g., collections_search), "execute" it
-            for tool_call in tool_calls:
-                if tool_call["function"]["name"] == "collections_search":
-                    # Since it's internal, simulate execution by sending follow-up with dummy results or let API handle
-                    # For now, assume API needs follow-up with tool response (adjust based on docs)
-                    tool_args = json.loads(tool_call["function"]["arguments"])
-                    # Here, you'd normally search the collection locally if possible, but since it's API-managed, send follow-up
-                    tool_response = "Retrieved relevant snippets from the collection."  # Placeholder; replace with actual search if you have access
-                    st.session_state.messages.append({
-                        "role": "tool",
-                        "tool_call_id": tool_call["id"],
-                        "name": "collections_search",
-                        "content": tool_response
-                    })
-
-            # Follow-up call with updated messages (including tool responses)
-            data["messages"] = st.session_state.messages  # Updated history
-            response = requests.post(API_URL, headers=headers, json=data)  # Second call
             api_resp = response.json()
-            choices = api_resp["choices"]
+            assistant_message = api_resp["choices"][0]["message"]
+            messages.append(assistant_message)
 
-        # Get final content
-        content = choices[0]["message"]["content"]
-        st.session_state.messages.append({"role": "assistant", "content": content})
-        with st.chat_message("assistant"):
-            st.markdown(content)
+            if "tool_calls" in assistant_message:
+                for tool_call in assistant_message["tool_calls"]:
+                    if tool_call["function"]["name"] == "collections_search":
+                        # Placeholder for internal tool response (adjust if API provides results)
+                        tool_args = json.loads(tool_call["function"]["arguments"])
+                        tool_result = f"Retrieved results for query: {tool_args['query']} from collection."  # Simulate; replace if actual search needed
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call["id"],
+                            "name": tool_call["function"]["name"],
+                            "content": tool_result
+                        })
+                # Continue loop for follow-up call
+            else:
+                content = assistant_message["content"]
+                break
+
+        if content:
+            st.session_state.messages.append({"role": "assistant", "content": content})
+            with st.chat_message("assistant"):
+                st.markdown(content)
+        else:
+            st.error("No response generated—check logs for tool call issues.")
